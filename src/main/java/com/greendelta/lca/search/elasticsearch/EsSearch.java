@@ -3,6 +3,7 @@ package com.greendelta.lca.search.elasticsearch;
 import static org.elasticsearch.index.query.QueryBuilders.matchPhraseQuery;
 import static org.elasticsearch.index.query.QueryBuilders.wildcardQuery;
 
+import java.util.Map;
 import java.util.Map.Entry;
 
 import org.elasticsearch.action.search.SearchRequestBuilder;
@@ -23,7 +24,6 @@ import com.greendelta.lca.search.SearchFilterValue;
 import com.greendelta.lca.search.SearchFilterValue.Type;
 import com.greendelta.lca.search.SearchQuery;
 import com.greendelta.lca.search.SearchResult;
-import com.greendelta.lca.search.SearchResult.ResultInfo;
 import com.greendelta.lca.search.SearchSorting;
 import com.greendelta.lca.search.aggregations.SearchAggregation;
 import com.greendelta.lca.search.aggregations.results.AggregationResult;
@@ -32,7 +32,7 @@ import com.greendelta.lca.search.aggregations.results.TermEntryBuilder;
 
 class EsSearch {
 
-	static SearchResult search(SearchQuery searchQuery, Client client, String indexName) {
+	static SearchResult<Map<String, Object>> search(SearchQuery searchQuery, Client client, String indexName) {
 		try {
 			SearchRequestBuilder request = client.prepareSearch(indexName);
 			setupPaging(request, searchQuery);
@@ -41,7 +41,7 @@ class EsSearch {
 			return search(request, searchQuery);
 		} catch (Exception e) {
 			e.printStackTrace();
-			return new SearchResult();
+			return new SearchResult<>();
 		}
 	}
 
@@ -103,7 +103,7 @@ class EsSearch {
 			QueryBuilder inner = null;
 			if (aggregation == null) {
 				if (value.type == Type.PHRASE) {
-					inner = matchPhraseQuery(filter.field, "\"" + value.value + "\"");
+					inner = matchPhraseQuery(filter.field, value.value);
 				} else {
 					inner = wildcardQuery(filter.field, value.value.toLowerCase());
 				}
@@ -121,8 +121,8 @@ class EsSearch {
 		return query;
 	}
 
-	private static SearchResult search(SearchRequestBuilder request, SearchQuery searchQuery) {
-		SearchResult result = new SearchResult();
+	private static SearchResult<Map<String, Object>> search(SearchRequestBuilder request, SearchQuery searchQuery) {
+		SearchResult<Map<String, Object>> result = new SearchResult<>();
 		SearchResponse response = null;
 		boolean doContinue = true;
 		long totalHits = 0;
@@ -144,7 +144,7 @@ class EsSearch {
 			}
 		}
 		result.resultInfo.count = result.data.size();
-		extendResultInfo(result.resultInfo, totalHits, searchQuery);
+		extendResultInfo(result, totalHits, searchQuery);
 		return result;
 	}
 
@@ -182,17 +182,17 @@ class EsSearch {
 		}
 	}
 
-	private static void extendResultInfo(ResultInfo info, long totalHits, SearchQuery searchQuery) {
-		info.totalCount = totalHits;
-		info.currentPage = searchQuery.getPage();
-		info.pageSize = searchQuery.getPageSize();
-		long totalCount = info.totalCount;
+	private static void extendResultInfo(SearchResult<Map<String, Object>> result, long totalHits, SearchQuery searchQuery) {
+		result.resultInfo.totalCount = totalHits;
+		result.resultInfo.currentPage = searchQuery.getPage();
+		result.resultInfo.pageSize = searchQuery.getPageSize();
+		long totalCount = result.resultInfo.totalCount;
 		if (searchQuery.getPageSize() != 0) {
 			int pageCount = (int) totalCount / searchQuery.getPageSize();
 			if ((totalCount % searchQuery.getPageSize()) != 0) {
 				pageCount = 1 + pageCount;
 			}
-			info.pageCount = pageCount;
+			result.resultInfo.pageCount = pageCount;
 		}
 	}
 

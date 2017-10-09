@@ -40,7 +40,7 @@ public class EsClient implements SearchClient {
 	}
 
 	@Override
-	public SearchResult search(SearchQuery searchQuery) {
+	public SearchResult<Map<String, Object>> search(SearchQuery searchQuery) {
 		return EsSearch.search(searchQuery, client, INDEX_NAME);
 	}
 
