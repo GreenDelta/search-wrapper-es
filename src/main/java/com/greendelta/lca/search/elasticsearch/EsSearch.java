@@ -18,8 +18,9 @@ import org.elasticsearch.search.aggregations.bucket.terms.StringTerms;
 import org.elasticsearch.search.aggregations.bucket.terms.Terms.Bucket;
 import org.elasticsearch.search.sort.SortOrder;
 
+import com.greendelta.lca.search.Conjunction;
+import com.greendelta.lca.search.MultiSearchFilter;
 import com.greendelta.lca.search.SearchFilter;
-import com.greendelta.lca.search.SearchFilter.Conjunction;
 import com.greendelta.lca.search.SearchFilterValue;
 import com.greendelta.lca.search.SearchFilterValue.Type;
 import com.greendelta.lca.search.SearchQuery;
@@ -89,6 +90,12 @@ class EsSearch {
 				continue;
 			query.must(q);
 		}
+		for (MultiSearchFilter filter : searchQuery.getMultiFilters()) {
+			BoolQueryBuilder q = toQuery(filter);
+			if (q == null)
+				continue;
+			query.must(q);
+		}
 	}
 
 	private static BoolQueryBuilder toQuery(SearchFilter filter, SearchAggregation aggregation) {
@@ -115,6 +122,36 @@ class EsSearch {
 			} else if (filter.conjunction == Conjunction.OR) {
 				query.should(inner);
 			}
+		}
+		if (!isRelevant)
+			return null;
+		return query;
+	}
+
+	private static BoolQueryBuilder toQuery(MultiSearchFilter filter) {
+		if (filter.values.isEmpty())
+			return null;
+		BoolQueryBuilder query = QueryBuilders.boolQuery();
+		boolean isRelevant = false;
+		for (String field : filter.fields) {
+			BoolQueryBuilder outer = QueryBuilders.boolQuery();
+			for (SearchFilterValue value : filter.values) {
+				if (value.value.length() < 3)
+					continue;
+				isRelevant = true;
+				QueryBuilder inner = null;
+				if (value.type == Type.PHRASE) {
+					inner = matchPhraseQuery(field, value.value);
+				} else {
+					inner = wildcardQuery(field, value.value.toLowerCase());
+				}
+				if (filter.conjunction == Conjunction.AND) {
+					outer.must(inner);
+				} else if (filter.conjunction == Conjunction.OR) {
+					outer.should(inner);
+				}
+			}
+			query.should(outer);
 		}
 		if (!isRelevant)
 			return null;
@@ -182,7 +219,8 @@ class EsSearch {
 		}
 	}
 
-	private static void extendResultInfo(SearchResult<Map<String, Object>> result, long totalHits, SearchQuery searchQuery) {
+	private static void extendResultInfo(SearchResult<Map<String, Object>> result, long totalHits,
+			SearchQuery searchQuery) {
 		result.resultInfo.totalCount = totalHits;
 		result.resultInfo.currentPage = searchQuery.getPage();
 		result.resultInfo.pageSize = searchQuery.getPageSize();
