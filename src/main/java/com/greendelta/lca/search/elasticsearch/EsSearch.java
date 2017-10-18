@@ -1,6 +1,7 @@
 package com.greendelta.lca.search.elasticsearch;
 
 import static org.elasticsearch.index.query.QueryBuilders.matchPhraseQuery;
+import static org.elasticsearch.index.query.QueryBuilders.rangeQuery;
 import static org.elasticsearch.index.query.QueryBuilders.wildcardQuery;
 
 import java.util.Map;
@@ -104,18 +105,14 @@ class EsSearch {
 		BoolQueryBuilder query = QueryBuilders.boolQuery();
 		boolean isRelevant = false;
 		for (SearchFilterValue value : filter.values) {
-			if (value.value.length() < 3)
+			if (value.value instanceof String && value.value.toString().isEmpty())
 				continue;
 			isRelevant = true;
 			QueryBuilder inner = null;
 			if (aggregation == null) {
-				if (value.type == Type.PHRASE) {
-					inner = matchPhraseQuery(filter.field, value.value);
-				} else {
-					inner = wildcardQuery(filter.field, value.value.toLowerCase());
-				}
+				inner = getQuery(filter.field, value);
 			} else {
-				inner = EsAggregations.getQuery(aggregation, value.value);
+				inner = EsAggregations.getQuery(aggregation, value.value.toString());
 			}
 			if (filter.conjunction == Conjunction.AND) {
 				query.must(inner);
@@ -136,15 +133,10 @@ class EsSearch {
 		for (String field : filter.fields) {
 			BoolQueryBuilder outer = QueryBuilders.boolQuery();
 			for (SearchFilterValue value : filter.values) {
-				if (value.value.length() < 3)
+				if (value.value instanceof String && value.value.toString().isEmpty())
 					continue;
 				isRelevant = true;
-				QueryBuilder inner = null;
-				if (value.type == Type.PHRASE) {
-					inner = matchPhraseQuery(field, value.value);
-				} else {
-					inner = wildcardQuery(field, value.value.toLowerCase());
-				}
+				QueryBuilder inner = getQuery(field, value);
 				if (filter.conjunction == Conjunction.AND) {
 					outer.must(inner);
 				} else if (filter.conjunction == Conjunction.OR) {
@@ -156,6 +148,16 @@ class EsSearch {
 		if (!isRelevant)
 			return null;
 		return query;
+	}
+
+	private static QueryBuilder getQuery(String field, SearchFilterValue value) {
+		if (value.type == Type.PHRASE)
+			return matchPhraseQuery(field, value.value);
+		if (value.type == Type.FROM)
+			return rangeQuery(field).from(value.value);
+		if (value.type == Type.TO)
+			return rangeQuery(field).to(value.value);
+		return wildcardQuery(field, value.value.toString().toLowerCase());
 	}
 
 	private static SearchResult<Map<String, Object>> search(SearchRequestBuilder request, SearchQuery searchQuery) {
