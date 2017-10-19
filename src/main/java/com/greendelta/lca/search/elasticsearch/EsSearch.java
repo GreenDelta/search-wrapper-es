@@ -1,9 +1,12 @@
 package com.greendelta.lca.search.elasticsearch;
 
+import static org.elasticsearch.index.query.QueryBuilders.matchAllQuery;
 import static org.elasticsearch.index.query.QueryBuilders.matchPhraseQuery;
 import static org.elasticsearch.index.query.QueryBuilders.rangeQuery;
+import static org.elasticsearch.index.query.QueryBuilders.termsQuery;
 import static org.elasticsearch.index.query.QueryBuilders.wildcardQuery;
 
+import java.util.Collection;
 import java.util.Map;
 import java.util.Map.Entry;
 
@@ -23,7 +26,6 @@ import com.greendelta.lca.search.Conjunction;
 import com.greendelta.lca.search.MultiSearchFilter;
 import com.greendelta.lca.search.SearchFilter;
 import com.greendelta.lca.search.SearchFilterValue;
-import com.greendelta.lca.search.SearchFilterValue.Type;
 import com.greendelta.lca.search.SearchQuery;
 import com.greendelta.lca.search.SearchResult;
 import com.greendelta.lca.search.SearchSorting;
@@ -151,13 +153,20 @@ class EsSearch {
 	}
 
 	private static QueryBuilder getQuery(String field, SearchFilterValue value) {
-		if (value.type == Type.PHRASE)
-			return matchPhraseQuery(field, value.value);
-		if (value.type == Type.FROM)
+		switch (value.type) {
+		case FROM:
 			return rangeQuery(field).from(value.value);
-		if (value.type == Type.TO)
+		case TO:
 			return rangeQuery(field).to(value.value);
-		return wildcardQuery(field, value.value.toString().toLowerCase());
+		case WILDCART:
+			return wildcardQuery(field, value.value.toString().toLowerCase());
+		case PHRASE:
+			if (!(value.value instanceof Collection))
+				return matchPhraseQuery(field, value.value);
+			return termsQuery(field, (Collection<?>) value.value);
+		default:
+			return matchAllQuery();
+		}
 	}
 
 	private static SearchResult<Map<String, Object>> search(SearchRequestBuilder request, SearchQuery searchQuery) {
