@@ -1,12 +1,12 @@
-package com.greendelta.lca.search.elasticsearch;
+package com.greendelta.search.wrapper.es;
 
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.query.TermQueryBuilder;
 import org.elasticsearch.search.aggregations.AggregationBuilders;
 import org.elasticsearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
 
-import com.greendelta.lca.search.aggregations.SearchAggregation;
-import com.greendelta.lca.search.aggregations.TermsAggregation;
+import com.greendelta.search.wrapper.aggregations.SearchAggregation;
+import com.greendelta.search.wrapper.aggregations.TermsAggregation;
 
 class EsAggregations {
 

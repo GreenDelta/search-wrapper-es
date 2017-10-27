@@ -1,4 +1,4 @@
-package com.greendelta.lca.search.elasticsearch;
+package com.greendelta.search.wrapper.es;
 
 import java.util.HashMap;
 import java.util.Map;

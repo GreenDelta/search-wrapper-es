@@ -1,4 +1,4 @@
-package com.greendelta.lca.search.elasticsearch;
+package com.greendelta.search.wrapper.es;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -25,9 +25,9 @@ import org.elasticsearch.client.Requests;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.XContentType;
 
-import com.greendelta.lca.search.SearchClient;
-import com.greendelta.lca.search.SearchQuery;
-import com.greendelta.lca.search.SearchResult;
+import com.greendelta.search.wrapper.SearchClient;
+import com.greendelta.search.wrapper.SearchQuery;
+import com.greendelta.search.wrapper.SearchResult;
 
 public class EsClient implements SearchClient {
 

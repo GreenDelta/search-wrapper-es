@@ -1,4 +1,4 @@
-package com.greendelta.lca.search.elasticsearch;
+package com.greendelta.search.wrapper.es;
 
 import static org.elasticsearch.index.query.QueryBuilders.matchAllQuery;
 import static org.elasticsearch.index.query.QueryBuilders.matchPhraseQuery;
@@ -22,17 +22,17 @@ import org.elasticsearch.search.aggregations.bucket.terms.StringTerms;
 import org.elasticsearch.search.aggregations.bucket.terms.Terms.Bucket;
 import org.elasticsearch.search.sort.SortOrder;
 
-import com.greendelta.lca.search.Conjunction;
-import com.greendelta.lca.search.MultiSearchFilter;
-import com.greendelta.lca.search.SearchFilter;
-import com.greendelta.lca.search.SearchFilterValue;
-import com.greendelta.lca.search.SearchQuery;
-import com.greendelta.lca.search.SearchResult;
-import com.greendelta.lca.search.SearchSorting;
-import com.greendelta.lca.search.aggregations.SearchAggregation;
-import com.greendelta.lca.search.aggregations.results.AggregationResult;
-import com.greendelta.lca.search.aggregations.results.AggregationResultBuilder;
-import com.greendelta.lca.search.aggregations.results.TermEntryBuilder;
+import com.greendelta.search.wrapper.Conjunction;
+import com.greendelta.search.wrapper.MultiSearchFilter;
+import com.greendelta.search.wrapper.SearchFilter;
+import com.greendelta.search.wrapper.SearchFilterValue;
+import com.greendelta.search.wrapper.SearchQuery;
+import com.greendelta.search.wrapper.SearchResult;
+import com.greendelta.search.wrapper.SearchSorting;
+import com.greendelta.search.wrapper.aggregations.SearchAggregation;
+import com.greendelta.search.wrapper.aggregations.results.AggregationResult;
+import com.greendelta.search.wrapper.aggregations.results.AggregationResultBuilder;
+import com.greendelta.search.wrapper.aggregations.results.TermEntryBuilder;
 
 class EsSearch {
 
