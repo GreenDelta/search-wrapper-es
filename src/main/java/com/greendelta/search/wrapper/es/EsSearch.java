@@ -3,7 +3,6 @@ package com.greendelta.search.wrapper.es;
 import static org.elasticsearch.index.query.QueryBuilders.matchAllQuery;
 import static org.elasticsearch.index.query.QueryBuilders.matchPhraseQuery;
 import static org.elasticsearch.index.query.QueryBuilders.rangeQuery;
-import static org.elasticsearch.index.query.QueryBuilders.termsQuery;
 import static org.elasticsearch.index.query.QueryBuilders.wildcardQuery;
 
 import java.util.Collection;
@@ -73,82 +72,98 @@ class EsSearch {
 	}
 
 	private static void setupQuery(SearchRequestBuilder request, SearchQuery searchQuery) {
-		BoolQueryBuilder query = QueryBuilders.boolQuery();
-		setupFilters(request, searchQuery, query);
-		if (query.hasClauses()) {
-			request.setQuery(query);
-		} else {
-			request.setQuery(QueryBuilders.matchAllQuery());
-		}
-	}
-
-	private static void setupFilters(SearchRequestBuilder request, SearchQuery searchQuery, BoolQueryBuilder query) {
 		for (SearchAggregation aggregation : searchQuery.getAggregations()) {
 			request.addAggregation(EsAggregations.getBuilder(aggregation));
 		}
+		BoolQueryBuilder query = QueryBuilders.boolQuery();
+		QueryBuilder current = null;
+		int count = 0;
 		for (SearchFilter filter : searchQuery.getFilters()) {
 			SearchAggregation aggregation = searchQuery.getAggregation(filter.field);
-			BoolQueryBuilder q = toQuery(filter, aggregation);
+			QueryBuilder q = toQuery(filter, aggregation);
 			if (q == null)
 				continue;
+			count++;
+			current = q;
 			query.must(q);
 		}
 		for (MultiSearchFilter filter : searchQuery.getMultiFilters()) {
-			BoolQueryBuilder q = toQuery(filter);
+			QueryBuilder q = toQuery(filter);
 			if (q == null)
 				continue;
+			count++;
+			current = q;
 			query.must(q);
+		}
+		if (count == 0) {
+			request.setQuery(QueryBuilders.matchAllQuery());
+		} else if (count == 1) {
+			request.setQuery(current);
+		} else {
+			request.setQuery(query);
 		}
 	}
 
-	private static BoolQueryBuilder toQuery(SearchFilter filter, SearchAggregation aggregation) {
+	private static QueryBuilder toQuery(SearchFilter filter, SearchAggregation aggregation) {
 		if (filter.values.isEmpty())
 			return null;
 		BoolQueryBuilder query = QueryBuilders.boolQuery();
-		boolean isRelevant = false;
+		QueryBuilder last = null;
+		int count = 0;
 		for (SearchFilterValue value : filter.values) {
 			if (value.value instanceof String && value.value.toString().isEmpty())
 				continue;
-			isRelevant = true;
-			QueryBuilder inner = null;
 			if (aggregation == null) {
-				inner = getQuery(filter.field, value);
+				last = getQuery(filter.field, value);
 			} else {
-				inner = EsAggregations.getQuery(aggregation, value.value.toString());
+				last = EsAggregations.getQuery(aggregation, value.value.toString());
 			}
 			if (filter.conjunction == Conjunction.AND) {
-				query.must(inner);
+				query.must(last);
 			} else if (filter.conjunction == Conjunction.OR) {
-				query.should(inner);
+				query.should(last);
 			}
+			count++;
 		}
-		if (!isRelevant)
+		if (count == 0)
 			return null;
+		if (count == 1)
+			return last;
 		return query;
 	}
 
-	private static BoolQueryBuilder toQuery(MultiSearchFilter filter) {
+	private static QueryBuilder toQuery(MultiSearchFilter filter) {
 		if (filter.values.isEmpty())
 			return null;
 		BoolQueryBuilder query = QueryBuilders.boolQuery();
-		boolean isRelevant = false;
+		QueryBuilder last = null;
+		int count = 0;
 		for (String field : filter.fields) {
-			BoolQueryBuilder outer = QueryBuilders.boolQuery();
+			int innerCount = 0;
+			BoolQueryBuilder inner = QueryBuilders.boolQuery();
 			for (SearchFilterValue value : filter.values) {
 				if (value.value instanceof String && value.value.toString().isEmpty())
 					continue;
-				isRelevant = true;
-				QueryBuilder inner = getQuery(field, value);
+				last = getQuery(field, value);
 				if (filter.conjunction == Conjunction.AND) {
-					outer.must(inner);
+					inner.must(last);
 				} else if (filter.conjunction == Conjunction.OR) {
-					outer.should(inner);
+					inner.should(last);
 				}
+				innerCount++;
 			}
-			query.should(outer);
+			if (innerCount == 1) {
+				query.should(last);
+			} else {
+				query.should(inner);
+				last = inner;
+			}
+			count++;
 		}
-		if (!isRelevant)
+		if (count == 0)
 			return null;
+		if (count == 1)
+			return last;
 		return query;
 	}
 
@@ -159,11 +174,16 @@ class EsSearch {
 		case TO:
 			return rangeQuery(field).to(value.value);
 		case WILDCART:
-			return wildcardQuery(field, value.value.toString().toLowerCase());
+			return wildcardQuery(field, value.value.toString());
 		case PHRASE:
 			if (!(value.value instanceof Collection))
 				return matchPhraseQuery(field, value.value);
-			return termsQuery(field, (Collection<?>) value.value);
+			Collection<?> values = (Collection<?>) value.value;
+			BoolQueryBuilder query = QueryBuilders.boolQuery();
+			for (Object v : values) {
+				query.should(matchPhraseQuery(field, v));
+			}
+			return query;
 		default:
 			return matchAllQuery();
 		}
