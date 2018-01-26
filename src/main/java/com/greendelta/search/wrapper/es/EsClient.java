@@ -160,6 +160,9 @@ public class EsClient implements SearchClient {
 
 	@Override
 	public void delete() {
+		boolean exists = client.admin().indices().prepareExists(INDEX_NAME).execute().actionGet().isExists();
+		if (!exists)
+			return;
 		client.admin().indices().delete(new DeleteIndexRequest(INDEX_NAME)).actionGet();
 	}
 
