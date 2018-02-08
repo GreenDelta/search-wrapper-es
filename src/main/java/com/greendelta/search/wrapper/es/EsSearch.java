@@ -3,6 +3,7 @@ package com.greendelta.search.wrapper.es;
 import static org.elasticsearch.index.query.QueryBuilders.matchAllQuery;
 import static org.elasticsearch.index.query.QueryBuilders.matchPhraseQuery;
 import static org.elasticsearch.index.query.QueryBuilders.rangeQuery;
+import static org.elasticsearch.index.query.QueryBuilders.termQuery;
 import static org.elasticsearch.index.query.QueryBuilders.wildcardQuery;
 
 import java.util.Collection;
@@ -15,6 +16,7 @@ import org.elasticsearch.client.Client;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.index.query.RangeQueryBuilder;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.aggregations.Aggregation;
 import org.elasticsearch.search.aggregations.bucket.terms.StringTerms;
@@ -169,10 +171,16 @@ class EsSearch {
 
 	private static QueryBuilder getQuery(String field, SearchFilterValue value) {
 		switch (value.type) {
-		case FROM:
-			return rangeQuery(field).from(value.value);
-		case TO:
-			return rangeQuery(field).to(value.value);
+		case RANGE:
+			Object[] range = (Object[]) value.value;
+			RangeQueryBuilder rangeQuery = rangeQuery(field);
+			if (range[0] != null) {
+				rangeQuery.from(range[0]);
+			}
+			if (range[1] != null) {
+				rangeQuery.to(range[1]);
+			}
+			return rangeQuery;
 		case WILDCART:
 			return wildcardQuery(field, value.value.toString());
 		case PHRASE:
@@ -184,6 +192,8 @@ class EsSearch {
 				query.should(matchPhraseQuery(field, v));
 			}
 			return query;
+		case TERM:
+			return termQuery(field, value.value);
 		default:
 			return matchAllQuery();
 		}
@@ -201,7 +211,7 @@ class EsSearch {
 			response = request.execute().actionGet();
 			SearchHit[] hits = response.getHits().getHits();
 			for (SearchHit hit : hits) {
-				result.data.add(hit.getSource());
+				result.data.add(hit.getSourceAsMap());
 			}
 			totalHits = response.getHits().getTotalHits();
 			doContinue = !searchQuery.isPaged() && result.data.size() != totalHits;
