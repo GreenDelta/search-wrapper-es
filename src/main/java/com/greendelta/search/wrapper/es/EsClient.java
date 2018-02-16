@@ -1,7 +1,6 @@
 package com.greendelta.search.wrapper.es;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -31,95 +30,87 @@ import com.greendelta.search.wrapper.SearchResult;
 
 public class EsClient implements SearchClient {
 
-	private static final String INDEX_NAME = "datasets";
-
 	private final Client client;
+	private final String indexName;
+	private final String indexType;
 
-	public EsClient(Client client) {
+	public EsClient(Client client, String indexName, String indexType) {
 		this.client = client;
+		this.indexName = indexName;
+		this.indexType = indexType;
 	}
 
 	@Override
 	public SearchResult<Map<String, Object>> search(SearchQuery searchQuery) {
-		return EsSearch.search(searchQuery, client, INDEX_NAME);
+		return EsSearch.search(searchQuery, client, indexName);
 	}
 
 	@Override
-	public void create(Map<String, Object> settings) {
-		boolean exists = client.admin().indices().prepareExists(INDEX_NAME).execute().actionGet().isExists();
+	public void create(Map<String, String> settings) {
+		boolean exists = client.admin().indices().prepareExists(indexName).execute().actionGet().isExists();
 		if (exists)
 			return;
-		String indexSettings = EsSettings.getConfig(settings);
-		CreateIndexRequest request = new CreateIndexRequest(INDEX_NAME);
+		String indexSettings = settings.get("config");
+		CreateIndexRequest request = new CreateIndexRequest(indexName);
 		request.settings(Settings.builder().loadFromSource(indexSettings, XContentType.JSON).put("number_of_shards", 1));
 		client.admin().indices().create(request).actionGet();
-		Map<String, String> mappings = EsSettings.getMappings(settings);
-		for (String indexType : mappings.keySet()) {
-			PutMappingRequest mappingRequest = Requests.putMappingRequest(INDEX_NAME);
-			mappingRequest.type(indexType).source(mappings.get(indexType), XContentType.JSON);
-			client.admin().indices().putMapping(mappingRequest).actionGet();
-		}
+		String mapping = settings.get("mapping");
+		PutMappingRequest mappingRequest = Requests.putMappingRequest(indexName);
+		mappingRequest.type(indexType).source(mapping, XContentType.JSON);
+		client.admin().indices().putMapping(mappingRequest).actionGet();
 	}
 
 	@Override
-	public void index(String indexType, String id, Map<String, Object> content) {
-		client.index(indexRequest(indexType, id, content)).actionGet();
+	public void index(String id, Map<String, Object> content) {
+		client.index(indexRequest(id, content)).actionGet();
 	}
 
 	@Override
-	public void index(String indexType, Map<String, Map<String, Object>> contentsById) {
-		index(Collections.singletonMap(indexType, contentsById));
-	}
-
-	@Override
-	public void index(Map<String, Map<String, Map<String, Object>>> contentsByIdByType) {
+	public void index(Map<String, Map<String, Object>> contentsById) {
 		BulkRequestBuilder builder = client.prepareBulk();
-		for (String indexType : contentsByIdByType.keySet()) {
-			Map<String, Map<String, Object>> contentsById = contentsByIdByType.get(indexType);
-			for (String id : contentsById.keySet()) {
-				Map<String, Object> content = contentsById.get(id);
-				builder.add(indexRequest(indexType, id, content));
-			}
+		for (String id : contentsById.keySet()) {
+			Map<String, Object> content = contentsById.get(id);
+			builder.add(indexRequest(id, content));
 		}
 		client.bulk(builder.request()).actionGet();
 	}
 
-	private IndexRequest indexRequest(String indexType, String id, Map<String, Object> content) {
-		IndexRequestBuilder builder = client.prepareIndex(INDEX_NAME, indexType, id);
+	private IndexRequest indexRequest(String id, Map<String, Object> content) {
+		IndexRequestBuilder builder = client.prepareIndex(indexName, indexType, id);
 		builder.setOpType(OpType.INDEX).setSource(content);
 		return builder.request();
 	}
 
 	@Override
-	public void remove(String indexType, String id) {
-		client.delete(deleteRequest(indexType, id)).actionGet();
+	public void remove(String id) {
+		client.delete(deleteRequest(id)).actionGet();
 	}
 
 	@Override
-	public void remove(String indexType, Set<String> ids) {
-		remove(Collections.singletonMap(indexType, ids));
-	}
-
-	@Override
-	public void remove(Map<String, Set<String>> idsByType) {
+	public void remove(Set<String> ids) {
 		BulkRequestBuilder bulk = client.prepareBulk();
-		for (String indexType : idsByType.keySet()) {
-			Set<String> ids = idsByType.get(indexType);
-			for (String id : ids) {
-				bulk.add(deleteRequest(indexType, id));
-			}
+		for (String id : ids) {
+			bulk.add(deleteRequest(id));
 		}
 		client.bulk(bulk.request()).actionGet();
-
 	}
 
-	private DeleteRequest deleteRequest(String indexType, String id) {
-		return client.prepareDelete(INDEX_NAME, indexType, id).request();
+	private DeleteRequest deleteRequest(String id) {
+		return client.prepareDelete(indexName, indexType, id).request();
 	}
 
 	@Override
-	public Map<String, Object> get(String indexType, String id) {
-		GetRequestBuilder builder = client.prepareGet(INDEX_NAME, indexType, id);
+	public boolean has(String id) {
+		GetRequestBuilder builder = client.prepareGet(indexName, indexType, id);
+		GetResponse response = client.get(builder.request()).actionGet();
+		if (response == null)
+			return false;
+		return response.isExists();
+	}
+	
+	@Override
+	public Map<String, Object> get(String id) {
+		GetRequestBuilder builder = client.prepareGet(indexName, indexType, id);
 		GetResponse response = client.get(builder.request()).actionGet();
 		if (response == null)
 			return null;
@@ -130,17 +121,9 @@ public class EsClient implements SearchClient {
 	}
 
 	@Override
-	public List<Map<String, Object>> get(String indexType, Set<String> ids) {
-		return get(Collections.singletonMap(indexType, ids));
-	}
-
-	@Override
-	public List<Map<String, Object>> get(Map<String, Set<String>> idsByType) {
+	public List<Map<String, Object>> get(Set<String> ids) {
 		MultiGetRequestBuilder builder = client.prepareMultiGet();
-		for (String indexType : idsByType.keySet()) {
-			Set<String> ids = idsByType.get(indexType);
-			builder.add(INDEX_NAME, indexType, ids);
-		}
+		builder.add(indexName, indexType, ids);
 		MultiGetResponse response = client.multiGet(builder.request()).actionGet();
 		if (response == null)
 			return null;
@@ -160,10 +143,10 @@ public class EsClient implements SearchClient {
 
 	@Override
 	public void delete() {
-		boolean exists = client.admin().indices().prepareExists(INDEX_NAME).execute().actionGet().isExists();
+		boolean exists = client.admin().indices().prepareExists(indexName).execute().actionGet().isExists();
 		if (!exists)
 			return;
-		client.admin().indices().delete(new DeleteIndexRequest(INDEX_NAME)).actionGet();
+		client.admin().indices().delete(new DeleteIndexRequest(indexName)).actionGet();
 	}
 
 }

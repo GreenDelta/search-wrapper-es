@@ -4,12 +4,17 @@ import static org.elasticsearch.index.query.QueryBuilders.matchAllQuery;
 import static org.elasticsearch.index.query.QueryBuilders.matchPhraseQuery;
 import static org.elasticsearch.index.query.QueryBuilders.rangeQuery;
 import static org.elasticsearch.index.query.QueryBuilders.termQuery;
+import static org.elasticsearch.index.query.QueryBuilders.termsQuery;
 import static org.elasticsearch.index.query.QueryBuilders.wildcardQuery;
 
 import java.util.Collection;
+import java.util.Collections;
+import java.util.GregorianCalendar;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.elasticsearch.action.search.SearchRequestBuilder;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.client.Client;
@@ -36,6 +41,8 @@ import com.greendelta.search.wrapper.aggregations.results.AggregationResultBuild
 import com.greendelta.search.wrapper.aggregations.results.TermEntryBuilder;
 
 class EsSearch {
+
+	private static final Logger log = LogManager.getLogger(EsSearch.class);
 
 	static SearchResult<Map<String, Object>> search(SearchQuery searchQuery, Client client, String indexName) {
 		try {
@@ -186,20 +193,25 @@ class EsSearch {
 		case PHRASE:
 			if (!(value.value instanceof Collection))
 				return matchPhraseQuery(field, value.value);
-			Collection<?> values = (Collection<?>) value.value;
+			Collection<?> phrases = (Collection<?>) value.value;
 			BoolQueryBuilder query = QueryBuilders.boolQuery();
-			for (Object v : values) {
-				query.should(matchPhraseQuery(field, v));
+			for (Object p : phrases) {
+				query.should(matchPhraseQuery(field, p));
 			}
 			return query;
 		case TERM:
-			return termQuery(field, value.value);
+			if (!(value.value instanceof Collection))
+				return termQuery(field, value.value);
+			Collection<?> terms = (Collection<?>) value.value;
+			return termsQuery(field, terms);
 		default:
 			return matchAllQuery();
 		}
 	}
 
 	private static SearchResult<Map<String, Object>> search(SearchRequestBuilder request, SearchQuery searchQuery) {
+		log.debug("Executing search request: " + request.toString());
+		long time = GregorianCalendar.getInstance().getTimeInMillis();
 		SearchResult<Map<String, Object>> result = new SearchResult<>();
 		SearchResponse response = null;
 		boolean doContinue = true;
@@ -211,7 +223,11 @@ class EsSearch {
 			response = request.execute().actionGet();
 			SearchHit[] hits = response.getHits().getHits();
 			for (SearchHit hit : hits) {
-				result.data.add(hit.getSourceAsMap());
+				if (searchQuery.getFullResult()) {
+					result.data.add(hit.getSourceAsMap());
+				} else {
+					result.data.add(Collections.singletonMap("documentId", hit.getId()));
+				}
 			}
 			totalHits = response.getHits().getTotalHits();
 			doContinue = !searchQuery.isPaged() && result.data.size() != totalHits;
@@ -223,6 +239,9 @@ class EsSearch {
 		}
 		result.resultInfo.count = result.data.size();
 		extendResultInfo(result, totalHits, searchQuery);
+		time = GregorianCalendar.getInstance().getTimeInMillis() - time;
+		log.debug("Total search took: " + time + "ms");
+		log.debug(result.resultInfo);
 		return result;
 	}
 
