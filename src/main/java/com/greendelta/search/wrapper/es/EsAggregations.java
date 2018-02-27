@@ -33,7 +33,7 @@ class EsAggregations {
 	}
 
 	private static TermsAggregationBuilder getBuilder(TermsAggregation aggregation) {
-		return AggregationBuilders.terms(aggregation.name).field(aggregation.field);
+		return AggregationBuilders.terms(aggregation.name).field(aggregation.field).size(Integer.MAX_VALUE);
 	}
 
 }
