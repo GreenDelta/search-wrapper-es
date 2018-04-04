@@ -1,15 +1,19 @@
 package com.greendelta.search.wrapper.es;
 
+import static org.elasticsearch.index.query.QueryBuilders.functionScoreQuery;
 import static org.elasticsearch.index.query.QueryBuilders.matchAllQuery;
 import static org.elasticsearch.index.query.QueryBuilders.matchPhraseQuery;
 import static org.elasticsearch.index.query.QueryBuilders.rangeQuery;
 import static org.elasticsearch.index.query.QueryBuilders.termQuery;
 import static org.elasticsearch.index.query.QueryBuilders.termsQuery;
 import static org.elasticsearch.index.query.QueryBuilders.wildcardQuery;
+import static org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders.scriptFunction;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.GregorianCalendar;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
@@ -22,6 +26,7 @@ import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.query.RangeQueryBuilder;
+import org.elasticsearch.index.query.functionscore.FunctionScoreQueryBuilder.FilterFunctionBuilder;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.aggregations.Aggregation;
 import org.elasticsearch.search.aggregations.bucket.terms.StringTerms;
@@ -39,6 +44,9 @@ import com.greendelta.search.wrapper.aggregations.SearchAggregation;
 import com.greendelta.search.wrapper.aggregations.results.AggregationResult;
 import com.greendelta.search.wrapper.aggregations.results.AggregationResultBuilder;
 import com.greendelta.search.wrapper.aggregations.results.TermEntryBuilder;
+import com.greendelta.search.wrapper.score.DateRangeScore;
+import com.greendelta.search.wrapper.score.GeographyScore;
+import com.greendelta.search.wrapper.score.IScore;
 
 class EsSearch {
 
@@ -104,13 +112,33 @@ class EsSearch {
 			current = q;
 			query.must(q);
 		}
+		QueryBuilder finalQuery = null;
 		if (count == 0) {
-			request.setQuery(QueryBuilders.matchAllQuery());
+			finalQuery = QueryBuilders.matchAllQuery();
 		} else if (count == 1) {
-			request.setQuery(current);
+			finalQuery = current;
 		} else {
-			request.setQuery(query);
+			finalQuery = query;
 		}
+		finalQuery = addScores(finalQuery, searchQuery);
+		request.setQuery(finalQuery);
+	}
+
+	private static QueryBuilder addScores(QueryBuilder query, SearchQuery searchQuery) {
+		if (searchQuery.getScores().isEmpty())
+			return query;
+		List<FilterFunctionBuilder> functions = new ArrayList<>();
+		for (int i = 0; i < searchQuery.getScores().size(); i++) {
+			IScore score = searchQuery.getScores().get(i);
+			if (score instanceof DateRangeScore) {
+				String script = DateRangeScript.from((DateRangeScore) score);
+				functions.add(new FilterFunctionBuilder(scriptFunction(script)));
+			} else if (score instanceof GeographyScore) {
+				String script = GeographyScript.from(((GeographyScore) score));
+				functions.add(new FilterFunctionBuilder(scriptFunction(script)));
+			}
+		}
+		return functionScoreQuery(query, functions.toArray(new FilterFunctionBuilder[functions.size()]));
 	}
 
 	private static QueryBuilder toQuery(SearchFilter filter, SearchAggregation aggregation) {
