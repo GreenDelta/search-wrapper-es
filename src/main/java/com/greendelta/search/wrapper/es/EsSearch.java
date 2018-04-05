@@ -29,6 +29,8 @@ import org.elasticsearch.index.query.RangeQueryBuilder;
 import org.elasticsearch.index.query.functionscore.FunctionScoreQueryBuilder.FilterFunctionBuilder;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.aggregations.Aggregation;
+import org.elasticsearch.search.aggregations.bucket.terms.DoubleTerms;
+import org.elasticsearch.search.aggregations.bucket.terms.LongTerms;
 import org.elasticsearch.search.aggregations.bucket.terms.StringTerms;
 import org.elasticsearch.search.aggregations.bucket.terms.Terms.Bucket;
 import org.elasticsearch.search.sort.SortOrder;
@@ -285,6 +287,8 @@ class EsSearch {
 			return null;
 		switch (type) {
 		case StringTerms.NAME:
+		case LongTerms.NAME:
+		case DoubleTerms.NAME:
 			return "TERM";
 		default:
 			return "UNKNOWN";
@@ -294,9 +298,10 @@ class EsSearch {
 	private static void putSpecificData(Aggregation aggregation, AggregationResultBuilder builder) {
 		switch (aggregation.getType()) {
 		case StringTerms.NAME:
-			StringTerms terms = (StringTerms) aggregation;
+		case LongTerms.NAME:
+		case DoubleTerms.NAME:
 			long totalCount = 0;
-			for (Bucket bucket : terms.getBuckets()) {
+			for (Bucket bucket : getTermBuckets(aggregation)) {
 				TermEntryBuilder entryBuilder = new TermEntryBuilder();
 				entryBuilder.key(bucket.getKeyAsString()).count(bucket.getDocCount());
 				builder.addEntry(entryBuilder.build());
@@ -304,6 +309,19 @@ class EsSearch {
 			}
 			builder.totalCount(totalCount);
 			break;
+		}
+	}
+
+	private static List<? extends Bucket> getTermBuckets(Aggregation aggregation) {
+		switch (aggregation.getType()) {
+		case StringTerms.NAME:
+			return ((StringTerms) aggregation).getBuckets();
+		case LongTerms.NAME:
+			return ((LongTerms) aggregation).getBuckets();
+		case DoubleTerms.NAME:
+			return ((DoubleTerms) aggregation).getBuckets();
+		default:
+			return new ArrayList<>();
 		}
 	}
 
