@@ -46,10 +46,7 @@ import com.greendelta.search.wrapper.aggregations.SearchAggregation;
 import com.greendelta.search.wrapper.aggregations.results.AggregationResult;
 import com.greendelta.search.wrapper.aggregations.results.AggregationResultBuilder;
 import com.greendelta.search.wrapper.aggregations.results.TermEntryBuilder;
-import com.greendelta.search.wrapper.score.AbsoluteScore;
-import com.greendelta.search.wrapper.score.DateRangeScore;
-import com.greendelta.search.wrapper.score.GeographyScore;
-import com.greendelta.search.wrapper.score.IScore;
+import com.greendelta.search.wrapper.score.Score;
 
 class EsSearch {
 
@@ -132,18 +129,8 @@ class EsSearch {
 			return query;
 		List<FilterFunctionBuilder> functions = new ArrayList<>();
 		for (int i = 0; i < searchQuery.getScores().size(); i++) {
-			IScore score = searchQuery.getScores().get(i);
-			String script = null;
-			if (score instanceof DateRangeScore) {
-				script = DateRangeScript.from((DateRangeScore) score);
-			} else if (score instanceof GeographyScore) {
-				script = GeographyScript.from(((GeographyScore) score));
-			} else if (score instanceof AbsoluteScore) {
-				script = AbsoluteScript.from(((AbsoluteScore) score));
-			}
-			if (script == null)
-				continue;
-			functions.add(new FilterFunctionBuilder(scriptFunction(script)));
+			Score score = searchQuery.getScores().get(i);
+			functions.add(new FilterFunctionBuilder(scriptFunction(EsScript.from(score))));
 		}
 		return functionScoreQuery(query, functions.toArray(new FilterFunctionBuilder[functions.size()]));
 	}
