@@ -1,7 +1,5 @@
 package com.greendelta.search.wrapper.es;
 
-import java.util.List;
-
 import com.greendelta.search.wrapper.score.Case;
 import com.greendelta.search.wrapper.score.Comparator;
 import com.greendelta.search.wrapper.score.Condition;
@@ -11,106 +9,90 @@ import com.greendelta.search.wrapper.score.Score;
 class EsScript {
 
 	static String from(Score score) {
+		double dWeight = score.getDefaultWeight();
 		if (score.getCases().length == 0)
-			return "return 1;";
-		String script = getMethods(score);
-		script += "def[] fieldValues = new def[" + score.fields.size() + "];";
-		script += "def[] values = new def[" + score.fields.size() + "];";
+			return "return " + dWeight + ";";
+		String s = getMethods(score);
+		s += "def[] fieldValues = new def[" + score.fields.size() + "];";
+		s += "def[] values = new def[" + score.fields.size() + "];";
 		for (int i = 0; i < score.fields.size(); i++) {
 			Field field = score.fields.get(i);
 			String escaper = field.value instanceof String ? "\"" : "";
 			String numDef = field.value instanceof Long ? "L" : "";
-			script += "fieldValues[" + i + "] = doc['" + field.name + "'].getValue();";
-			script += "values[" + i + "] = " + escaper + "" + field.value + "" + escaper + numDef + ";";
+			s += "fieldValues[" + i + "] = doc['" + field.name + "'].getValue();";
+			if (field.lowerLimit != null) {
+				s += "if (fieldValues[" + i + "] < " + field.lowerLimit + ") { return " + dWeight + "; }";
+			}
+			if (field.upperLimit != null) {
+				s += "if (fieldValues[" + i + "] >  " + field.upperLimit + ") { return " + dWeight + "; }";
+			}
+			s += "values[" + i + "] = " + escaper + "" + field.value + "" + escaper + numDef + ";";
 		}
-		script += "int fieldClass = toClass(fieldValues, values);";
-		script += "int valueClass = toClass(values, values);";
-		script += "int classDifference = (int) Math.abs(fieldClass - valueClass);";
-		script += cases(score.getCases());
-		return script;
+		s += cases(score);
+		return s;
 	}
 
-	private static String getClassificationMethod(Score score) {
-		String script = "int toClass(def[] fieldValues, def[] values) {";
-		if (score.classes.isEmpty()) {
-			script += "return 0;";
-		} else {
-			int classes = 0;
-			for (int i = 0; i < score.classes.size(); i++) {
-				List<Condition> conditions = score.classes.get(i);
-				if (!conditions.isEmpty()) {
-					classes++;
-					script += conditions(conditions, i);
-				}
-			}
-			if (classes == 0) {
-				script += "return 0;";
-			} else {
-				script += "return " + classes + ";";
-			}
-		}
-		script += "}";
-		return script;
-	}
-
-	static String cases(Case[] cases) {
-		String script = "";
-		for (Case c : cases) {
+	static String cases(Score score) {
+		String s = "";
+		boolean hadElse = false;
+		for (Case c : score.getCases()) {
 			if (!c.conditions.isEmpty()) {
-				script += conditions(c.conditions, c.weight);
+				s += conditions(c);
 			} else {
-				script += "return " + c.weight + ";";
+				s += "return " + c.weight + ";";
+				hadElse = true;
 				break;
 			}
 		}
-		return script;
+		if (!hadElse) {
+			s += "return " + score.getDefaultWeight() + ";"; // default case
+		}
+		return s;
 	}
 
-	static String conditions(List<Condition> conditions, Object value) {
-		String script = "if (";
+	static String conditions(Case scoreCase) {
+		String s = "if (";
 		boolean firstCondition = true;
-		for (Condition con : conditions) {
+		for (Condition con : scoreCase.conditions) {
 			if (!firstCondition) {
-				script += " && ";
+				s += " && ";
 			}
 			if (con.comparator == Comparator.EQUALS) {
-				script += con.value1 + ".equals(" + con.value2 + ")";
+				s += "(" + con.value1 + ") != null && " + (con.value1) + ".equals(" + con.value2 + ")";
 			} else {
 				String numDef1 = con.value1 instanceof Long ? "L" : "";
 				String numDef2 = con.value2 instanceof Long ? "L" : "";
-				script += con.value1 + numDef1 + " " + toString(con.comparator) + " " + con.value2 + numDef2;
+				s += con.value1 + numDef1 + " " + toString(con.comparator) + " " + con.value2 + numDef2;
 			}
 			firstCondition = false;
 		}
-		script += ") { return " + value + "; } ";
-		return script;
+		s += ") { return " + scoreCase.weight + "; } ";
+		return s;
 	}
 
 	private static String getDistanceMethod() {
-		String script = "double toRad(double degree) { return degree * Math.PI / 180; }";
-		script += "double getDistance(double lat1, double lon1, double lat2, double lon2) { ";
-		script += "double earthRadius = 6371;";
-		script += "double rdLat = toRad(lat2-lat1);";
-		script += "double rdLon = toRad(lon2-lon1);";
-		script += "double rLat1 = toRad(lat1);";
-		script += "double rLat2 = toRad(lat2);";
-		script += "double a = Math.sin(rdLat/2) * Math.sin(rdLat/2) ";
-		script += "+ Math.sin(rdLon/2) * Math.sin(rdLon/2) * Math.cos(rLat1) * Math.cos(rLat2);";
-		script += "double b = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));";
-		script += "return earthRadius * b;";
-		script += "}";
-		return script;
+		String s = "double toRad(double degree) { return degree * Math.PI / 180; }";
+		s += "double getDistance(double lat1, double lon1, double lat2, double lon2) { ";
+		s += "double earthRadius = 6371;";
+		s += "double rdLat = toRad(lat2-lat1);";
+		s += "double rdLon = toRad(lon2-lon1);";
+		s += "double rLat1 = toRad(lat1);";
+		s += "double rLat2 = toRad(lat2);";
+		s += "double a = Math.sin(rdLat/2) * Math.sin(rdLat/2) + Math.sin(rdLon/2) * Math.sin(rdLon/2) * Math.cos(rLat1) * Math.cos(rLat2);";
+		s += "double b = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));";
+		s += "return earthRadius * b;";
+		s += "}";
+		return s;
 	}
 
 	private static String getMethods(Score score) {
-		String script = getClassificationMethod(score);
-		script += getDistanceMethod();
-		script += "String substring(String value, int from, int to) { return value.substring(from, to); }";
-		script += "int indexOf(String value, String phrase) { return value.indexOf(phrase); }";
-		script += "int lastIndexOf(String value, String phrase) { return value.lastIndexOf(phrase); }";
-		script += "double abs(double value) { return Math.abs(value); }";
-		script += "double min(double v1, double v2) { return Math.min(v1, v2); }";
-		return script;
+		String s = getDistanceMethod();
+		s += "String substring(String value, int from, int to) { if (value == null || from == -1 || to == -1) { return null; } return value.substring(from, to); }";
+		s += "int indexOf(String value, String phrase) { if (value == null || phrase == null) { return -1; } return value.indexOf(phrase); }";
+		s += "int lastIndexOf(String value, String phrase) { if (value == null || phrase == null) { return -1; } return value.lastIndexOf(phrase); }";
+		s += "double abs(double value) { return Math.abs(value); }";
+		s += "double min(double v1, double v2) { return Math.min(v1, v2); }";
+		return s;
 	}
 
 	private static String toString(Comparator comparator) {
