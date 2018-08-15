@@ -7,6 +7,7 @@ import static org.elasticsearch.index.query.QueryBuilders.rangeQuery;
 import static org.elasticsearch.index.query.QueryBuilders.termQuery;
 import static org.elasticsearch.index.query.QueryBuilders.termsQuery;
 import static org.elasticsearch.index.query.QueryBuilders.wildcardQuery;
+import static org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders.linearDecayFunction;
 import static org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders.scriptFunction;
 
 import java.util.ArrayList;
@@ -36,6 +37,7 @@ import org.elasticsearch.search.aggregations.bucket.terms.Terms.Bucket;
 import org.elasticsearch.search.sort.SortOrder;
 
 import com.greendelta.search.wrapper.Conjunction;
+import com.greendelta.search.wrapper.LinearDecayFunction;
 import com.greendelta.search.wrapper.MultiSearchFilter;
 import com.greendelta.search.wrapper.SearchFilter;
 import com.greendelta.search.wrapper.SearchFilterValue;
@@ -121,6 +123,7 @@ class EsSearch {
 			finalQuery = query;
 		}
 		finalQuery = addScores(finalQuery, searchQuery);
+
 		request.setQuery(finalQuery);
 	}
 
@@ -131,6 +134,11 @@ class EsSearch {
 		for (int i = 0; i < searchQuery.getScores().size(); i++) {
 			Score score = searchQuery.getScores().get(i);
 			functions.add(new FilterFunctionBuilder(scriptFunction(EsScript.from(score))));
+		}
+		for (int i = 0; i < searchQuery.getFunctions().size(); i++) {
+			LinearDecayFunction function = searchQuery.getFunctions().get(i);
+			functions.add(new FilterFunctionBuilder(linearDecayFunction(function.fieldName, function.origin,
+					function.scale, function.offset, function.decay)));
 		}
 		return functionScoreQuery(query, functions.toArray(new FilterFunctionBuilder[functions.size()]));
 	}
