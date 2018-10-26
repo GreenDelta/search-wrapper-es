@@ -59,7 +59,7 @@ public class EsClient implements SearchClient {
 		mappingRequest.type(indexType).source(mapping, XContentType.JSON);
 		client.admin().indices().putMapping(mappingRequest).actionGet();
 	}
-
+	
 	@Override
 	public void index(String id, Map<String, Object> content) {
 		client.index(indexRequest(id, content)).actionGet();
@@ -141,6 +141,21 @@ public class EsClient implements SearchClient {
 		return results;
 	}
 
+	@Override
+	public void clear() {
+		boolean exists = client.admin().indices().prepareExists(indexName).execute().actionGet().isExists();
+		if (!exists)
+			return;
+		Map<String, Object> mapping = client.admin().indices().prepareGetMappings(indexName).execute().actionGet().getMappings().get(indexName).get(indexType).getSourceAsMap();
+		client.admin().indices().delete(new DeleteIndexRequest(indexName)).actionGet();
+		CreateIndexRequest request = new CreateIndexRequest(indexName);
+		request.settings(Settings.builder().put("max_result_window", 2147483647).put("number_of_shards", 1));
+		client.admin().indices().create(request).actionGet();
+		PutMappingRequest mappingRequest = Requests.putMappingRequest(indexName);
+		mappingRequest.type(indexType).source(mapping);
+		client.admin().indices().putMapping(mappingRequest).actionGet();
+	}
+	
 	@Override
 	public void delete() {
 		boolean exists = client.admin().indices().prepareExists(indexName).execute().actionGet().isExists();
