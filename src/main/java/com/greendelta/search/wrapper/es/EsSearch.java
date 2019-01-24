@@ -240,7 +240,7 @@ class EsSearch {
 	}
 
 	private static SearchResult<Map<String, Object>> search(SearchRequestBuilder request, SearchQuery searchQuery) {
-		log.debug("Executing search request: " + request.toString());
+		log.trace("Executing search request: " + request.toString());
 		long time = GregorianCalendar.getInstance().getTimeInMillis();
 		SearchResult<Map<String, Object>> result = new SearchResult<>();
 		SearchResponse response = null;
@@ -270,8 +270,8 @@ class EsSearch {
 		result.resultInfo.count = result.data.size();
 		extendResultInfo(result, totalHits, searchQuery);
 		time = GregorianCalendar.getInstance().getTimeInMillis() - time;
-		log.debug("Total search took: " + time + "ms");
-		log.debug(result.resultInfo);
+		log.trace("Total search took: " + time + "ms");
+		log.trace(result.resultInfo);
 		return result;
 	}
 
