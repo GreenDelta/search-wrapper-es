@@ -12,6 +12,7 @@ import org.elasticsearch.action.admin.indices.delete.DeleteIndexRequest;
 import org.elasticsearch.action.admin.indices.mapping.put.PutMappingRequest;
 import org.elasticsearch.action.bulk.BulkRequestBuilder;
 import org.elasticsearch.action.delete.DeleteRequest;
+import org.elasticsearch.action.delete.DeleteRequestBuilder;
 import org.elasticsearch.action.get.GetRequestBuilder;
 import org.elasticsearch.action.get.GetResponse;
 import org.elasticsearch.action.get.MultiGetItemResponse;
@@ -19,6 +20,7 @@ import org.elasticsearch.action.get.MultiGetRequestBuilder;
 import org.elasticsearch.action.get.MultiGetResponse;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.index.IndexRequestBuilder;
+import org.elasticsearch.action.support.WriteRequest.RefreshPolicy;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.client.Requests;
 import org.elasticsearch.common.settings.Settings;
@@ -52,17 +54,18 @@ public class EsClient implements SearchClient {
 			return;
 		String indexSettings = settings.get("config");
 		CreateIndexRequest request = new CreateIndexRequest(indexName);
-		request.settings(Settings.builder().loadFromSource(indexSettings, XContentType.JSON).put("number_of_shards", 1));
+		request.settings(
+				Settings.builder().loadFromSource(indexSettings, XContentType.JSON).put("number_of_shards", 1));
 		client.admin().indices().create(request).actionGet();
 		String mapping = settings.get("mapping");
 		PutMappingRequest mappingRequest = Requests.putMappingRequest(indexName);
 		mappingRequest.type(indexType).source(mapping, XContentType.JSON);
 		client.admin().indices().putMapping(mappingRequest).actionGet();
 	}
-	
+
 	@Override
 	public void index(String id, Map<String, Object> content) {
-		client.index(indexRequest(id, content)).actionGet();
+		client.index(indexRequest(id, content, true)).actionGet();
 	}
 
 	@Override
@@ -70,33 +73,40 @@ public class EsClient implements SearchClient {
 		BulkRequestBuilder builder = client.prepareBulk();
 		for (String id : contentsById.keySet()) {
 			Map<String, Object> content = contentsById.get(id);
-			builder.add(indexRequest(id, content));
+			builder.add(indexRequest(id, content, false));
 		}
-		client.bulk(builder.request()).actionGet();
+		client.bulk(builder.setRefreshPolicy(RefreshPolicy.IMMEDIATE).request()).actionGet();
 	}
 
-	private IndexRequest indexRequest(String id, Map<String, Object> content) {
+	private IndexRequest indexRequest(String id, Map<String, Object> content, boolean refresh) {
 		IndexRequestBuilder builder = client.prepareIndex(indexName, indexType, id);
 		builder.setOpType(OpType.INDEX).setSource(content);
+		if (refresh) {
+			builder.setRefreshPolicy(RefreshPolicy.IMMEDIATE);
+		}
 		return builder.request();
 	}
 
 	@Override
 	public void remove(String id) {
-		client.delete(deleteRequest(id)).actionGet();
+		client.delete(deleteRequest(id, true)).actionGet();
 	}
 
 	@Override
 	public void remove(Set<String> ids) {
 		BulkRequestBuilder bulk = client.prepareBulk();
 		for (String id : ids) {
-			bulk.add(deleteRequest(id));
+			bulk.add(deleteRequest(id, false));
 		}
-		client.bulk(bulk.request()).actionGet();
+		client.bulk(bulk.setRefreshPolicy(RefreshPolicy.IMMEDIATE).request()).actionGet();
 	}
 
-	private DeleteRequest deleteRequest(String id) {
-		return client.prepareDelete(indexName, indexType, id).request();
+	private DeleteRequest deleteRequest(String id, boolean refresh) {
+		DeleteRequestBuilder builder = client.prepareDelete(indexName, indexType, id);
+		if (refresh) {
+			builder.setRefreshPolicy(RefreshPolicy.IMMEDIATE);
+		}
+		return builder.request();
 	}
 
 	@Override
@@ -107,7 +117,7 @@ public class EsClient implements SearchClient {
 			return false;
 		return response.isExists();
 	}
-	
+
 	@Override
 	public Map<String, Object> get(String id) {
 		GetRequestBuilder builder = client.prepareGet(indexName, indexType, id);
@@ -146,7 +156,8 @@ public class EsClient implements SearchClient {
 		boolean exists = client.admin().indices().prepareExists(indexName).execute().actionGet().isExists();
 		if (!exists)
 			return;
-		Map<String, Object> mapping = client.admin().indices().prepareGetMappings(indexName).execute().actionGet().getMappings().get(indexName).get(indexType).getSourceAsMap();
+		Map<String, Object> mapping = client.admin().indices().prepareGetMappings(indexName).execute().actionGet()
+				.getMappings().get(indexName).get(indexType).getSourceAsMap();
 		client.admin().indices().delete(new DeleteIndexRequest(indexName)).actionGet();
 		CreateIndexRequest request = new CreateIndexRequest(indexName);
 		request.settings(Settings.builder().put("max_result_window", 2147483647).put("number_of_shards", 1));
@@ -155,7 +166,7 @@ public class EsClient implements SearchClient {
 		mappingRequest.type(indexType).source(mapping);
 		client.admin().indices().putMapping(mappingRequest).actionGet();
 	}
-	
+
 	@Override
 	public void delete() {
 		boolean exists = client.admin().indices().prepareExists(indexName).execute().actionGet().isExists();
