@@ -21,6 +21,8 @@ import org.elasticsearch.action.get.MultiGetResponse;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.index.IndexRequestBuilder;
 import org.elasticsearch.action.support.WriteRequest.RefreshPolicy;
+import org.elasticsearch.action.update.UpdateRequest;
+import org.elasticsearch.action.update.UpdateRequestBuilder;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.client.Requests;
 import org.elasticsearch.common.settings.Settings;
@@ -45,6 +47,11 @@ public class EsClient implements SearchClient {
 	@Override
 	public SearchResult<Map<String, Object>> search(SearchQuery searchQuery) {
 		return EsSearch.search(searchQuery, client, indexName);
+	}
+	
+	@Override
+	public Set<String> searchIds(SearchQuery searchQuery) {
+		return EsSearch.searchIds(searchQuery, client, indexName);
 	}
 
 	@Override
@@ -81,6 +88,39 @@ public class EsClient implements SearchClient {
 	private IndexRequest indexRequest(String id, Map<String, Object> content, boolean refresh) {
 		IndexRequestBuilder builder = client.prepareIndex(indexName, indexType, id);
 		builder.setOpType(OpType.INDEX).setSource(content);
+		if (refresh) {
+			builder.setRefreshPolicy(RefreshPolicy.IMMEDIATE);
+		}
+		return builder.request();
+	}
+
+	@Override
+	public void update(String id, Map<String, Object> update) {
+		client.update(updateRequest(id, update, true)).actionGet();
+	}
+
+	@Override
+	public void update(Set<String> ids, Map<String, Object> update) {
+		BulkRequestBuilder builder = client.prepareBulk();
+		for (String id : ids) {
+			builder.add(updateRequest(id, update, false));
+		}
+		client.bulk(builder.setRefreshPolicy(RefreshPolicy.IMMEDIATE).request()).actionGet();
+	}
+
+	@Override
+	public void update(Map<String, Map<String, Object>> updatesById) {
+		BulkRequestBuilder builder = client.prepareBulk();
+		for (String id : updatesById.keySet()) {
+			Map<String, Object> update = updatesById.get(id);
+			builder.add(updateRequest(id, update, false));
+		}
+		client.bulk(builder.setRefreshPolicy(RefreshPolicy.IMMEDIATE).request()).actionGet();
+	}
+
+	private UpdateRequest updateRequest(String id, Map<String, Object> content, boolean refresh) {
+		UpdateRequestBuilder builder = client.prepareUpdate(indexName, indexType, id);
+		builder.setDoc(content);
 		if (refresh) {
 			builder.setRefreshPolicy(RefreshPolicy.IMMEDIATE);
 		}

@@ -14,9 +14,11 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.GregorianCalendar;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -56,15 +58,25 @@ class EsSearch {
 
 	static SearchResult<Map<String, Object>> search(SearchQuery searchQuery, Client client, String indexName) {
 		try {
-			SearchRequestBuilder request = client.prepareSearch(indexName);
-			setupPaging(request, searchQuery);
-			setupSorting(request, searchQuery);
-			setupQuery(request, searchQuery);
+			SearchRequestBuilder request = requestBuilder(searchQuery, client, indexName);
 			return search(request, searchQuery);
 		} catch (Exception e) {
 			e.printStackTrace();
 			return new SearchResult<>();
 		}
+	}
+
+	static Set<String> searchIds(SearchQuery searchQuery, Client client, String indexName) {
+		SearchRequestBuilder request = requestBuilder(searchQuery, client, indexName);
+		return searchIds(request, searchQuery);
+	}
+
+	private static SearchRequestBuilder requestBuilder(SearchQuery searchQuery, Client client, String indexName) {
+		SearchRequestBuilder request = client.prepareSearch(indexName);
+		setupPaging(request, searchQuery);
+		setupSorting(request, searchQuery);
+		setupQuery(request, searchQuery);
+		return request;
 	}
 
 	private static void setupPaging(SearchRequestBuilder request, SearchQuery searchQuery) {
@@ -273,6 +285,30 @@ class EsSearch {
 		log.trace("Total search took: " + time + "ms");
 		log.trace(result.resultInfo);
 		return result;
+	}
+
+	private static Set<String> searchIds(SearchRequestBuilder request, SearchQuery searchQuery) {
+		log.trace("Executing search request: " + request.toString());
+		long time = GregorianCalendar.getInstance().getTimeInMillis();
+		Set<String> ids = new HashSet<>();
+		SearchResponse response = null;
+		boolean doContinue = true;
+		long totalHits = 0;
+		while (doContinue) {
+			if (!searchQuery.isPaged()) {
+				request.setFrom(ids.size());
+			}
+			response = request.execute().actionGet();
+			SearchHit[] hits = response.getHits().getHits();
+			for (SearchHit hit : hits) {
+				ids.add(hit.getId());
+			}
+			totalHits = response.getHits().getTotalHits();
+			doContinue = !searchQuery.isPaged() && ids.size() != totalHits;
+		}
+		time = GregorianCalendar.getInstance().getTimeInMillis() - time;
+		log.trace("Total search took: " + time + "ms");
+		return ids;
 	}
 
 	private static AggregationResult toResult(Aggregation aggregation) {
