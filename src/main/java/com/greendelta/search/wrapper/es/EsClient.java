@@ -27,6 +27,8 @@ import org.elasticsearch.client.Client;
 import org.elasticsearch.client.Requests;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.XContentType;
+import org.elasticsearch.script.Script;
+import org.elasticsearch.script.ScriptType;
 
 import com.greendelta.search.wrapper.SearchClient;
 import com.greendelta.search.wrapper.SearchQuery;
@@ -48,7 +50,7 @@ public class EsClient implements SearchClient {
 	public SearchResult<Map<String, Object>> search(SearchQuery searchQuery) {
 		return EsSearch.search(searchQuery, client, indexName);
 	}
-	
+
 	@Override
 	public Set<String> searchIds(SearchQuery searchQuery) {
 		return EsSearch.searchIds(searchQuery, client, indexName);
@@ -100,10 +102,24 @@ public class EsClient implements SearchClient {
 	}
 
 	@Override
+	public void update(String id, String script, Map<String, Object> parameters) {
+		client.update(updateRequest(id, script, parameters, true)).actionGet();
+	}
+
+	@Override
 	public void update(Set<String> ids, Map<String, Object> update) {
 		BulkRequestBuilder builder = client.prepareBulk();
 		for (String id : ids) {
 			builder.add(updateRequest(id, update, false));
+		}
+		client.bulk(builder.setRefreshPolicy(RefreshPolicy.IMMEDIATE).request()).actionGet();
+	}
+
+	@Override
+	public void update(Set<String> ids, String script, Map<String, Object> parameters) {
+		BulkRequestBuilder builder = client.prepareBulk();
+		for (String id : ids) {
+			builder.add(updateRequest(id, script, parameters, false));
 		}
 		client.bulk(builder.setRefreshPolicy(RefreshPolicy.IMMEDIATE).request()).actionGet();
 	}
@@ -121,6 +137,15 @@ public class EsClient implements SearchClient {
 	private UpdateRequest updateRequest(String id, Map<String, Object> content, boolean refresh) {
 		UpdateRequestBuilder builder = client.prepareUpdate(indexName, indexType, id);
 		builder.setDoc(content);
+		if (refresh) {
+			builder.setRefreshPolicy(RefreshPolicy.IMMEDIATE);
+		}
+		return builder.request();
+	}
+
+	private UpdateRequest updateRequest(String id, String script, Map<String, Object> parameters, boolean refresh) {
+		UpdateRequestBuilder builder = client.prepareUpdate(indexName, indexType, id);
+		builder.setScript(new Script(ScriptType.INLINE, "painless", script, parameters));
 		if (refresh) {
 			builder.setRefreshPolicy(RefreshPolicy.IMMEDIATE);
 		}
