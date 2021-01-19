@@ -32,6 +32,7 @@ import org.elasticsearch.index.query.RangeQueryBuilder;
 import org.elasticsearch.index.query.functionscore.FunctionScoreQueryBuilder.FilterFunctionBuilder;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.aggregations.Aggregation;
+import org.elasticsearch.search.aggregations.bucket.range.InternalRange;
 import org.elasticsearch.search.aggregations.bucket.terms.DoubleTerms;
 import org.elasticsearch.search.aggregations.bucket.terms.LongTerms;
 import org.elasticsearch.search.aggregations.bucket.terms.StringTerms;
@@ -46,15 +47,18 @@ import com.greendelta.search.wrapper.SearchFilterValue;
 import com.greendelta.search.wrapper.SearchQuery;
 import com.greendelta.search.wrapper.SearchResult;
 import com.greendelta.search.wrapper.SearchSorting;
+import com.greendelta.search.wrapper.aggregations.RangeAggregation;
 import com.greendelta.search.wrapper.aggregations.SearchAggregation;
+import com.greendelta.search.wrapper.aggregations.TermsAggregation;
 import com.greendelta.search.wrapper.aggregations.results.AggregationResult;
 import com.greendelta.search.wrapper.aggregations.results.AggregationResultBuilder;
-import com.greendelta.search.wrapper.aggregations.results.TermEntryBuilder;
+import com.greendelta.search.wrapper.aggregations.results.AggregationResultEntry;
 import com.greendelta.search.wrapper.score.Score;
 
 class EsSearch {
 
 	private static final Logger log = LogManager.getLogger(EsSearch.class);
+	private static final String RANGE_TYPE = "range";
 
 	static SearchResult<Map<String, Object>> search(SearchQuery searchQuery, Client client, String indexName) {
 		try {
@@ -167,7 +171,7 @@ class EsSearch {
 			if (aggregation == null) {
 				last = getQuery(filter.field, value);
 			} else {
-				last = EsAggregations.getQuery(aggregation, value.value.toString());
+				last = EsAggregations.getQuery(aggregation, value);
 			}
 			if (filter.conjunction == Conjunction.AND) {
 				query.must(last);
@@ -325,22 +329,30 @@ class EsSearch {
 		case StringTerms.NAME:
 		case LongTerms.NAME:
 		case DoubleTerms.NAME:
-			return "TERM";
+			return TermsAggregation.TYPE;
+		case RANGE_TYPE:
+			return RangeAggregation.TYPE;
 		default:
 			return "UNKNOWN";
 		}
 	}
 
 	private static void putSpecificData(Aggregation aggregation, AggregationResultBuilder builder) {
+		long totalCount = 0;
 		switch (aggregation.getType()) {
 		case StringTerms.NAME:
 		case LongTerms.NAME:
 		case DoubleTerms.NAME:
-			long totalCount = 0;
 			for (Bucket bucket : getTermBuckets(aggregation)) {
-				TermEntryBuilder entryBuilder = new TermEntryBuilder();
-				entryBuilder.key(bucket.getKeyAsString()).count(bucket.getDocCount());
-				builder.addEntry(entryBuilder.build());
+				builder.addEntry(new AggregationResultEntry(bucket.getKeyAsString(), bucket.getDocCount()));
+				totalCount += bucket.getDocCount();
+			}
+			builder.totalCount(totalCount);
+			break;
+		case RANGE_TYPE:
+			for (org.elasticsearch.search.aggregations.bucket.range.Range.Bucket bucket : ((InternalRange<?, ?>) aggregation).getBuckets()) {
+				Object[] data = new Object[] { bucket.getFrom(), bucket.getTo() };
+				builder.addEntry(new AggregationResultEntry(bucket.getKeyAsString(), bucket.getDocCount(), data));
 				totalCount += bucket.getDocCount();
 			}
 			builder.totalCount(totalCount);
