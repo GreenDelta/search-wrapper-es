@@ -13,15 +13,12 @@ import static org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders.
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.GregorianCalendar;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 import org.elasticsearch.action.search.SearchRequestBuilder;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.client.Client;
@@ -32,6 +29,7 @@ import org.elasticsearch.index.query.RangeQueryBuilder;
 import org.elasticsearch.index.query.functionscore.FunctionScoreQueryBuilder.FilterFunctionBuilder;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.aggregations.Aggregation;
+import org.elasticsearch.search.aggregations.bucket.nested.ParsedNested;
 import org.elasticsearch.search.aggregations.bucket.range.InternalRange;
 import org.elasticsearch.search.aggregations.bucket.terms.DoubleTerms;
 import org.elasticsearch.search.aggregations.bucket.terms.LongTerms;
@@ -57,8 +55,8 @@ import com.greendelta.search.wrapper.score.Score;
 
 class EsSearch {
 
-	private static final Logger log = LogManager.getLogger(EsSearch.class);
 	private static final String RANGE_TYPE = "range";
+	private static final String NESTED_TYPE = "nested";
 
 	static SearchResult<Map<String, Object>> search(SearchQuery searchQuery, Client client, String indexName) {
 		try {
@@ -114,13 +112,15 @@ class EsSearch {
 		QueryBuilder current = null;
 		int count = 0;
 		for (SearchFilter filter : searchQuery.getFilters()) {
-			SearchAggregation aggregation = searchQuery.getAggregation(filter.field);
-			QueryBuilder q = toQuery(filter, aggregation);
-			if (q == null)
-				continue;
-			count++;
-			current = q;
-			query.must(q);
+			List<SearchAggregation> aggregations = searchQuery.getAggregationsByField(filter.field);
+			for (SearchAggregation aggregation : aggregations) {
+				QueryBuilder q = toQuery(filter, aggregation);
+				if (q == null)
+					continue;
+				count++;
+				current = q;
+				query.must(q);
+			}
 		}
 		for (MultiSearchFilter filter : searchQuery.getMultiFilters()) {
 			QueryBuilder q = toQuery(filter);
@@ -139,7 +139,6 @@ class EsSearch {
 			finalQuery = query;
 		}
 		finalQuery = addScores(finalQuery, searchQuery);
-
 		request.setQuery(finalQuery);
 	}
 
@@ -256,8 +255,6 @@ class EsSearch {
 	}
 
 	private static SearchResult<Map<String, Object>> search(SearchRequestBuilder request, SearchQuery searchQuery) {
-		log.trace("Executing search request: " + request.toString());
-		long time = GregorianCalendar.getInstance().getTimeInMillis();
 		SearchResult<Map<String, Object>> result = new SearchResult<>();
 		SearchResponse response = null;
 		boolean doContinue = true;
@@ -277,23 +274,16 @@ class EsSearch {
 			}
 			totalHits = response.getHits().getTotalHits();
 			doContinue = !searchQuery.isPaged() && result.data.size() != totalHits;
-		}
-		if (response.getAggregations() != null) {
-			for (Aggregation aggregation : response.getAggregations().asList()) {
-				result.aggregations.add(toResult(aggregation));
+			if (response.getAggregations() != null) {
+				result.aggregations.addAll(toResults(response.getAggregations().asList()));
 			}
 		}
 		result.resultInfo.count = result.data.size();
 		extendResultInfo(result, totalHits, searchQuery);
-		time = GregorianCalendar.getInstance().getTimeInMillis() - time;
-		log.trace("Total search took: " + time + "ms");
-		log.trace(result.resultInfo);
 		return result;
 	}
 
 	private static Set<String> searchIds(SearchRequestBuilder request, SearchQuery searchQuery) {
-		log.trace("Executing search request: " + request.toString());
-		long time = GregorianCalendar.getInstance().getTimeInMillis();
 		Set<String> ids = new HashSet<>();
 		SearchResponse response = null;
 		boolean doContinue = true;
@@ -310,11 +300,21 @@ class EsSearch {
 			totalHits = response.getHits().getTotalHits();
 			doContinue = !searchQuery.isPaged() && ids.size() != totalHits;
 		}
-		time = GregorianCalendar.getInstance().getTimeInMillis() - time;
-		log.trace("Total search took: " + time + "ms");
 		return ids;
 	}
-
+	
+	private static List<AggregationResult> toResults(List<Aggregation> aggregations) {
+		List<AggregationResult> results = new ArrayList<>();
+		for (Aggregation aggregation : aggregations) {
+			if (!aggregation.getType().equals(NESTED_TYPE)) {
+				results.add(toResult(aggregation));
+			} else {
+				results.addAll(toResults(((ParsedNested) aggregation).getAggregations().asList()));
+			}
+		}
+		return results;
+	}
+	
 	private static AggregationResult toResult(Aggregation aggregation) {
 		AggregationResultBuilder builder = new AggregationResultBuilder();
 		builder.name(aggregation.getName()).type(mapType(aggregation.getType()));
