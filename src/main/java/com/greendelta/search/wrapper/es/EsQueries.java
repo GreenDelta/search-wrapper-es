@@ -89,6 +89,7 @@ class EsQueries {
 	private static AggregationBuilder nest(AggregationBuilder builder, SearchAggregation aggregation) {
 		String path = aggregation.field;
 		String name = aggregation.name;
+		builder.subAggregation(AggregationBuilders.reverseNested(name + "-r"));
 		while (path.contains(".")) {
 			name += "-n";
 			path = path.substring(0, path.lastIndexOf("."));
