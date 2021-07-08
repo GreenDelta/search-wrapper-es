@@ -106,21 +106,19 @@ class EsSearch {
 
 	private static void setupQuery(SearchRequestBuilder request, SearchQuery searchQuery) {
 		for (SearchAggregation aggregation : searchQuery.getAggregations()) {
-			request.addAggregation(EsAggregations.getBuilder(aggregation));
+			request.addAggregation(EsQueries.getBuilder(aggregation));
 		}
 		BoolQueryBuilder query = QueryBuilders.boolQuery();
 		QueryBuilder current = null;
 		int count = 0;
 		for (SearchFilter filter : searchQuery.getFilters()) {
 			List<SearchAggregation> aggregations = searchQuery.getAggregationsByField(filter.field);
-			for (SearchAggregation aggregation : aggregations) {
-				QueryBuilder q = toQuery(filter, aggregation);
-				if (q == null)
-					continue;
-				count++;
-				current = q;
-				query.must(q);
-			}
+			QueryBuilder q = toQuery(filter, aggregations);
+			if (q == null)
+				continue;
+			count++;
+			current = q;
+			query.must(q);
 		}
 		for (MultiSearchFilter filter : searchQuery.getMultiFilters()) {
 			QueryBuilder q = toQuery(filter);
@@ -158,7 +156,7 @@ class EsSearch {
 		return functionScoreQuery(query, functions.toArray(new FilterFunctionBuilder[functions.size()]));
 	}
 
-	private static QueryBuilder toQuery(SearchFilter filter, SearchAggregation aggregation) {
+	private static QueryBuilder toQuery(SearchFilter filter, List<SearchAggregation> aggregations) {
 		if (filter.values.isEmpty())
 			return null;
 		BoolQueryBuilder query = QueryBuilders.boolQuery();
@@ -167,10 +165,16 @@ class EsSearch {
 		for (SearchFilterValue value : filter.values) {
 			if (value.value instanceof String && value.value.toString().isEmpty())
 				continue;
-			if (aggregation == null) {
+			if (aggregations.isEmpty()) {
 				last = getQuery(filter.field, value);
+			} else if (aggregations.size() == 1) {
+				last = EsQueries.getQuery(aggregations.get(0), value);
 			} else {
-				last = EsAggregations.getQuery(aggregation, value);
+				BoolQueryBuilder aQuery = QueryBuilders.boolQuery();
+				for (SearchAggregation aggregation : aggregations) {
+					aQuery.must(EsQueries.getQuery(aggregation, value));
+				}
+				last = aQuery;
 			}
 			if (filter.conjunction == Conjunction.AND) {
 				query.must(last);
@@ -222,6 +226,13 @@ class EsSearch {
 	}
 
 	private static QueryBuilder getQuery(String field, SearchFilterValue value) {
+		QueryBuilder builder = createQuery(field, value);
+		if (!EsQueries.isNested(field))
+			return builder;
+		return EsQueries.nest(builder, field);
+	}
+
+	private static QueryBuilder createQuery(String field, SearchFilterValue value) {
 		switch (value.type) {
 		case RANGE:
 			Object[] range = (Object[]) value.value;
@@ -302,7 +313,7 @@ class EsSearch {
 		}
 		return ids;
 	}
-	
+
 	private static List<AggregationResult> toResults(List<Aggregation> aggregations) {
 		List<AggregationResult> results = new ArrayList<>();
 		for (Aggregation aggregation : aggregations) {
@@ -314,7 +325,7 @@ class EsSearch {
 		}
 		return results;
 	}
-	
+
 	private static AggregationResult toResult(Aggregation aggregation) {
 		AggregationResultBuilder builder = new AggregationResultBuilder();
 		builder.name(aggregation.getName()).type(mapType(aggregation.getType()));

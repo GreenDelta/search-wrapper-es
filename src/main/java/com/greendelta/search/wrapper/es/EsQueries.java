@@ -12,13 +12,13 @@ import com.greendelta.search.wrapper.aggregations.RangeAggregation;
 import com.greendelta.search.wrapper.aggregations.SearchAggregation;
 import com.greendelta.search.wrapper.aggregations.TermsAggregation;
 
-class EsAggregations {
+class EsQueries {
 
 	static QueryBuilder getQuery(SearchAggregation aggregation, SearchFilterValue value) {
 		QueryBuilder builder = createBuilder(aggregation, value);
-		if (!isNested(aggregation))
+		if (!isNested(aggregation.field))
 			return builder;
-		return nest(builder, aggregation);
+		return nest(builder, aggregation.field);
 	}
 
 	private static QueryBuilder createBuilder(SearchAggregation aggregation, SearchFilterValue value) {
@@ -41,8 +41,8 @@ class EsAggregations {
 		return QueryBuilders.rangeQuery(aggregation.field).from(v[0]).to(v[1]);
 	}
 
-	private static QueryBuilder nest(QueryBuilder builder, SearchAggregation aggregation) {
-		String path = aggregation.field;
+	static QueryBuilder nest(QueryBuilder builder, String field) {
+		String path = field;
 		while (path.contains(".")) {
 			path = path.substring(0, path.lastIndexOf("."));
 			builder = QueryBuilders.nestedQuery(path, builder, ScoreMode.Total);
@@ -52,7 +52,7 @@ class EsAggregations {
 
 	static AggregationBuilder getBuilder(SearchAggregation aggregation) {
 		AggregationBuilder builder = createBuilder(aggregation);
-		if (!isNested(aggregation))
+		if (!isNested(aggregation.field))
 			return builder;
 		return nest(builder, aggregation);
 	}
@@ -97,8 +97,8 @@ class EsAggregations {
 		return builder;
 	}
 
-	private static boolean isNested(SearchAggregation aggregation) {
-		return aggregation.field.contains(".");
+	static boolean isNested(String field) {
+		return field.contains(".");
 	}
 
 }
