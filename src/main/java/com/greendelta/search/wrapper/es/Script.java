@@ -6,7 +6,7 @@ import com.greendelta.search.wrapper.score.Condition;
 import com.greendelta.search.wrapper.score.Field;
 import com.greendelta.search.wrapper.score.Score;
 
-class EsScript {
+class Script {
 
 	static String from(Score score) {
 		double dWeight = score.getDefaultWeight();
@@ -32,7 +32,7 @@ class EsScript {
 		return s;
 	}
 
-	static String cases(Score score) {
+	private static String cases(Score score) {
 		String s = "";
 		boolean hadElse = false;
 		for (Case c : score.getCases()) {
@@ -50,7 +50,7 @@ class EsScript {
 		return s;
 	}
 
-	static String conditions(Case scoreCase) {
+	private static String conditions(Case scoreCase) {
 		String s = "if (";
 		boolean firstCondition = true;
 		for (Condition con : scoreCase.conditions) {

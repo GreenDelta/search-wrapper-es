@@ -24,7 +24,6 @@ import org.elasticsearch.action.support.WriteRequest.RefreshPolicy;
 import org.elasticsearch.action.update.UpdateRequest;
 import org.elasticsearch.action.update.UpdateRequestBuilder;
 import org.elasticsearch.client.Client;
-import org.elasticsearch.client.Requests;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.script.Script;
@@ -33,6 +32,7 @@ import org.elasticsearch.script.ScriptType;
 import com.greendelta.search.wrapper.SearchClient;
 import com.greendelta.search.wrapper.SearchQuery;
 import com.greendelta.search.wrapper.SearchResult;
+import com.greendelta.search.wrapper.es.Search.EsRequest;
 
 public class EsClient implements SearchClient {
 
@@ -48,12 +48,19 @@ public class EsClient implements SearchClient {
 
 	@Override
 	public SearchResult<Map<String, Object>> search(SearchQuery searchQuery) {
-		return EsSearch.search(searchQuery, client, indexName);
+		try {
+			EsRequest request = new Request(client, indexName);
+			return Search.run(request, searchQuery);
+		} catch (Exception e) {
+			e.printStackTrace();
+			return new SearchResult<>();
+		}
 	}
 
 	@Override
 	public Set<String> searchIds(SearchQuery searchQuery) {
-		return EsSearch.searchIds(searchQuery, client, indexName);
+		EsRequest request = new Request(client, indexName);
+		return Search.ids(request, searchQuery);
 	}
 
 	@Override
@@ -67,7 +74,7 @@ public class EsClient implements SearchClient {
 				Settings.builder().loadFromSource(indexSettings, XContentType.JSON).put("number_of_shards", 1));
 		client.admin().indices().create(request).actionGet();
 		String mapping = settings.get("mapping");
-		PutMappingRequest mappingRequest = Requests.putMappingRequest(indexName);
+		PutMappingRequest mappingRequest = org.elasticsearch.client.Requests.putMappingRequest(indexName);
 		mappingRequest.type(indexType).source(mapping, XContentType.JSON);
 		client.admin().indices().putMapping(mappingRequest).actionGet();
 	}
@@ -227,7 +234,7 @@ public class EsClient implements SearchClient {
 		CreateIndexRequest request = new CreateIndexRequest(indexName);
 		request.settings(Settings.builder().put("max_result_window", 2147483647).put("number_of_shards", 1));
 		client.admin().indices().create(request).actionGet();
-		PutMappingRequest mappingRequest = Requests.putMappingRequest(indexName);
+		PutMappingRequest mappingRequest = org.elasticsearch.client.Requests.putMappingRequest(indexName);
 		mappingRequest.type(indexType).source(mapping);
 		client.admin().indices().putMapping(mappingRequest).actionGet();
 	}
