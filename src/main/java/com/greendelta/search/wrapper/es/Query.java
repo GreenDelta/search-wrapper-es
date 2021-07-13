@@ -22,42 +22,29 @@ import com.greendelta.search.wrapper.MultiSearchFilter;
 import com.greendelta.search.wrapper.SearchFilter;
 import com.greendelta.search.wrapper.SearchFilterValue;
 import com.greendelta.search.wrapper.SearchQuery;
-import com.greendelta.search.wrapper.aggregations.SearchAggregation;
 import com.greendelta.search.wrapper.score.Score;
 
 class Query {
 
 	static QueryBuilder builder(SearchQuery searchQuery) {
-		BoolQueryBuilder query = QueryBuilders.boolQuery();
-		QueryBuilder current = null;
-		int count = 0;
+		BoolQueryBuilder bool = QueryBuilders.boolQuery();
 		for (SearchFilter filter : searchQuery.getFilters()) {
-			List<SearchAggregation> aggregations = searchQuery.getAggregationsByField(filter.field);
-			QueryBuilder q = toQuery(filter, aggregations);
-			if (q == null)
+			QueryBuilder query = toQuery(filter);
+			if (query == null)
 				continue;
-			count++;
-			current = q;
-			query.must(q);
+			bool.must(query);
 		}
 		for (MultiSearchFilter filter : searchQuery.getMultiFilters()) {
-			QueryBuilder q = toQuery(filter);
-			if (q == null)
+			if (filter.values.isEmpty())
 				continue;
-			count++;
-			current = q;
-			query.must(q);
+			QueryBuilder query = toQuery(filter);
+			if (query == null)
+				continue;
+			bool.must(query);
 		}
-		QueryBuilder finalQuery = null;
-		if (count == 0) {
-			finalQuery = QueryBuilders.matchAllQuery();
-		} else if (count == 1) {
-			finalQuery = current;
-		} else {
-			finalQuery = query;
-		}
-		finalQuery = addScores(finalQuery, searchQuery);
-		return finalQuery;
+		if (!bool.must().isEmpty())
+			return addScores(simplify(bool), searchQuery);
+		return addScores(QueryBuilders.matchAllQuery(), searchQuery);
 	}
 
 	private static QueryBuilder addScores(QueryBuilder query, SearchQuery searchQuery) {
@@ -76,78 +63,53 @@ class Query {
 		return functionScoreQuery(query, functions.toArray(new FilterFunctionBuilder[functions.size()]));
 	}
 
-	private static QueryBuilder toQuery(SearchFilter filter, List<SearchAggregation> aggregations) {
+	private static QueryBuilder toQuery(SearchFilter filter) {
 		if (filter.values.isEmpty())
 			return null;
-		BoolQueryBuilder query = QueryBuilders.boolQuery();
-		QueryBuilder last = null;
-		int count = 0;
+		BoolQueryBuilder bool = QueryBuilders.boolQuery();
 		for (SearchFilterValue value : filter.values) {
 			if (value.value instanceof String && value.value.toString().isEmpty())
 				continue;
-			if (aggregations.isEmpty()) {
-				last = Query.builder(filter.field, value);
-			} else if (aggregations.size() == 1) {
-				last = Query.builder(aggregations.get(0), value);
-			} else {
-				BoolQueryBuilder aQuery = QueryBuilders.boolQuery();
-				for (SearchAggregation aggregation : aggregations) {
-					aQuery.must(Query.builder(aggregation, value));
-				}
-				last = aQuery;
-			}
-			if (filter.conjunction == Conjunction.AND) {
-				query.must(last);
-			} else if (filter.conjunction == Conjunction.OR) {
-				query.should(last);
-			}
-			count++;
+			QueryBuilder query = builder(filter.field, value);
+			append(bool, query, filter.conjunction);
 		}
-		if (count == 0)
-			return null;
-		if (count == 1)
-			return last;
-		return query;
+		return simplify(bool);
 	}
 
 	private static QueryBuilder toQuery(MultiSearchFilter filter) {
 		if (filter.values.isEmpty())
 			return null;
-		BoolQueryBuilder query = QueryBuilders.boolQuery();
-		QueryBuilder last = null;
-		int count = 0;
+		BoolQueryBuilder outerBool = QueryBuilders.boolQuery();
 		for (String field : filter.fields) {
-			int innerCount = 0;
-			BoolQueryBuilder inner = QueryBuilders.boolQuery();
+			BoolQueryBuilder innerBool = QueryBuilders.boolQuery();
 			for (SearchFilterValue value : filter.values) {
 				if (value.value instanceof String && value.value.toString().isEmpty())
 					continue;
-				last = Query.builder(field, value);
-				if (filter.conjunction == Conjunction.AND) {
-					inner.must(last);
-				} else if (filter.conjunction == Conjunction.OR) {
-					inner.should(last);
-				}
-				innerCount++;
+				QueryBuilder query = builder(field, value);
+				append(innerBool, query, filter.conjunction);
 			}
-			if (innerCount == 1) {
-				query.should(last);
-			} else {
-				query.should(inner);
-				last = inner;
-			}
-			count++;
+			outerBool.should(innerBool);
 		}
-		if (count == 0)
-			return null;
-		if (count == 1)
-			return last;
-		return query;
+		return simplify(outerBool);
 	}
 
-	private static QueryBuilder builder(SearchAggregation aggregation, SearchFilterValue value) {
-		QueryBuilder builder = createBuilder(aggregation.field, value);
-		return decorate(builder, aggregation.field, value);
+	private static void append(BoolQueryBuilder boolQuery, QueryBuilder query, Conjunction conjunction) {
+		if (conjunction == Conjunction.AND) {
+			boolQuery.must(query);
+		} else if (conjunction == Conjunction.OR) {
+			boolQuery.should(query);
+		}
+	}
+
+	private static QueryBuilder simplify(BoolQueryBuilder query) {
+		int queries = query.must().size() + query.should().size();
+		if (queries == 0)
+			return null;
+		if (queries == 1 && query.must().isEmpty())
+			return query.should().get(0);
+		if (queries == 1 && query.should().isEmpty())
+			return query.must().get(0);
+		return query;
 	}
 
 	private static QueryBuilder builder(String field, SearchFilterValue value) {
@@ -181,10 +143,10 @@ class Query {
 		if (!(value.value instanceof Collection))
 			return matchPhraseQuery(field, value.value);
 		Collection<?> phrases = (Collection<?>) value.value;
+		if (phrases.size() == 1)
+			return matchPhraseQuery(field, phrases.iterator().next());
 		BoolQueryBuilder query = QueryBuilders.boolQuery();
-		for (Object p : phrases) {
-			query.should(matchPhraseQuery(field, p));
-		}
+		phrases.forEach(phrase -> query.should(matchPhraseQuery(field, phrase)));
 		return query;
 	}
 
