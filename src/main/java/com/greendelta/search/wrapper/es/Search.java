@@ -88,7 +88,7 @@ class Search {
 		setupPaging(request, searchQuery);
 		setupSorting(request, searchQuery);
 		setupAggregations(request, searchQuery);
-		request.setQuery(Query.builder(searchQuery));
+		request.setQuery(Query.create(searchQuery));
 		return request;
 	}
 
