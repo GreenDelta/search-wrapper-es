@@ -98,7 +98,7 @@ class Query {
 			return terms(field, value);
 		case PHRASE:
 			return phrase(field, value);
-		case WILDCART:
+		case WILDCARD:
 			return wildcard(field, value);
 		case RANGE:
 			return range(field, value);
