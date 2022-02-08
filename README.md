@@ -1,4 +1,5 @@
-# Deprecated: This project uses log4j-core prior to version 2.15 and thus is open to the Apache Log4j2 Remote Code Execution (RCE) Vulnerability - CVE-2021-44228 - Please use [search-wrapper-os](https://github.com/GreenDelta/search-wrapper-os) instead
+# Deprecated
+This project is not longer maintained and is replaced by [search-wrapper-os](https://github.com/GreenDelta/search-wrapper-os)
 
 # Search wrapper - Implementation for elasticsearch
 This project provides an implementation for the search-wrapper API using elasticsearch as a search engine.
