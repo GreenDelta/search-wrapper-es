@@ -29,7 +29,7 @@ class Response implements EsResponse {
 
 	@Override
 	public long getTotalHits() {
-		return response.getHits().getTotalHits();
+		return response.getHits().getTotalHits().value;
 	}
 
 	@Override
